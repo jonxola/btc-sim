@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>btc-sim</title>
+
+    <link rel="preconnect" href="https://fonts.gstatic.com">
+    <link href="https://fonts.googleapis.com/css2?family=Source+Code+Pro&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+
+    <script defer src="https://cdn.jsdelivr.net/npm/vue@3.0.5/dist/vue.global.prod.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/chart.js@2.9.4/dist/Chart.bundle.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@0.5.7/chartjs-plugin-annotation.min.js"></script>
+    <script type="module" src="script.js"></script>
+</head>
+<body>
+    <div class="panels">
+        <!-- INFO -->
+        <div class="panel panel--info">
+            <div>
+                <h3>What is this?</h3>
+                <p><em>btc-sim</em> lets you test investment strategies throughout Bitcoin's history. That way you know how many lambos you could have bought if you didn't spend all of your BTC on a pizza.</p>
+                <p class="info__small">Remember that this is Bitcoin's *history*. Things that work here may or may not work in the future, no one knows.</p>
+            </div>
+
+            <div>
+                <h3>How do I use it?</h3>
+                <p>The <em>chart</em> section shows you Bitcoin's price history across various time frames in either a linear or logarithmic scale.</p>
+                <p>The <em>order</em> section lets you place one-time or recurring orders at any point as far back as July 17, 2010 (the oldest price data available). When you place an order, it'll show up in your wallet and on the price chart.</p>
+                <p class="info__small"><em>*tip*:</em> if you click on a date input box, then click on the chart, the date will autofill for you!</p>
+                <p>The <em>wallet</em> section summarizes your simulation holdings. You can see your BTC balance, its current value in USD, and investment statistics. The wallet also keeps a history of your orders, allowing you to delete some or all of them at any time.</p>
+            </div>
+
+            <div>
+                <h3>Where does the data come from?</h3>
+                <p>Price data comes from CoinDesk's <a href="https://www.coindesk.com/API" target="_blank">Bitcoin Price Index API</a>.</p>
+            </div>
+
+            <div>
+                <h3>Can I see how it works?</h3>
+                <p>Sure! The full source code is available on <a href="https://github.com/jonxola/btc-sim" target="_blank">GitHub</a>.</p>
+                <p><em>btc-sim</em> is built with a blend of native web technologies, Vue.js, and Chart.js.</p>
+            </div>
+        </div>
+
+        <!-- WALLET -->
+        <div class="panel panel--wallet">
+            <h2>Wallet</h2>
+            <div class="wallet">
+                <h3>Balance</h3>
+                <p>{{ formatBtc(btc) }}</p>
+                <p>{{ formatUsd(usd) }}</p>
+        
+                <h3>Stats</h3>
+                <h4>Total Cost</h4>
+                <p>{{ formatUsd(totalCost) }}</p>
+                <h4>Average Price</h4>
+                <p>{{ formatUsd(avgCost) }}</p>
+                <h4>Total Return</h4>
+                <p>{{ formatUsd(totalReturn) }} ({{ formatPct(totalReturnPct) }})</p>
+        
+                <h3>Orders</h3>
+                <p class="orders__clear" @click="clearOrders">clear all</p>
+                <details class="orders__list">
+                    <summary>{{ orders.length }}</summary>
+                    <ul>
+                        <li class="order" v-for="(order, index) in orders">
+                            <p class="order__date">{{ formatDate(order.date) }}</p>
+                            <p class="order__price">{{ formatUsd(order.price) }}</p>
+                            <p class="order__exchange">{{ formatUsd(order.usd) }} &rarr; {{ formatBtc(order.btc) }}</p>
+                            <p class="order__delete" @click="removeOrder(index)">delete</p>
+                        </li>
+                    </ul>
+                </details>
+            </div>
+        </div>
+
+        <!-- PRICE CHART -->
+        <div class="panel panel--chart">
+            <h2>Chart</h2>
+            <div class="controls">
+                <div class="controls__scale">
+                    <button :class="{ active: activeScale === 'linear'}" @click="setScale('linear')">linear</button>
+                    <button :class="{ active: activeScale === 'logarithmic'}" @click="setScale('logarithmic')">log</button>
+                </div>
+                <div class="controls__range">
+                    <button :class="{ active: activeRange === 'max'}" @click="setRange('max')">max</button>
+                    <button :class="{ active: activeRange === '5y'}" @click="setRange('5y')">5y</button>
+                    <button :class="{ active: activeRange === '1y'}" @click="setRange('1y')">1y</button>
+                    <button :class="{ active: activeRange === '6m'}" @click="setRange('6m')">6mo</button>
+                    <button :class="{ active: activeRange === '1m'}" @click="setRange('1m')">1mo</button>
+                    <button :class="{ active: activeRange === '1w'}" @click="setRange('1w')">1w</button>
+                </div>
+            </div>
+            <div class="chart-container">
+                <canvas class="chart"></canvas>
+            </div>
+            <p class="coindesk">Powered by <a href="https://www.coindesk.com/price/bitcoin" target="_blank">CoinDesk</a></p>
+        </div>
+
+        <!-- ORDER FORM -->
+        <div class="panel panel--order-form">
+            <h2>Order</h2>
+            <div class="order-form">
+                <form @submit.prevent="onSubmit">
+                    <label>
+                        <span>Order Type</span>
+                        <select v-model="type">
+                            <option value="single">One-Time</option>
+                            <option value="recurring">Recurring</option>
+                        </select>
+                    </label>
+                    
+                    <!-- one-time order -->
+                    <template v-if="type === 'single'">
+                        <label>
+                            <span>Date</span>
+                            <input v-model="single.date" @focus="focus('date')" type="date" min="2010-07-17" :max="latestClose" required>
+                        </label>
+                        <label>
+                            <span>USD</span>
+                            <input v-model="single.usd" type="number" min="0.01" step="0.01" placeholder="100" required>
+                        </label>
+                    </template>
+        
+                    <!-- recurring order-->
+                    <template v-if="type === 'recurring'">
+                        <label>
+                            <span>Start</span>
+                            <input v-model="recurring.start" @focus="focus('start')" type="date" min="2010-07-17" :max="recurring.end" required>
+                        </label>
+                        <label>
+                            <span>End</span>
+                            <input v-model="recurring.end" @focus="focus('end')" type="date" min="2010-07-17" :max="latestClose" required>
+                        </label>
+                        <label>
+                            <span>Frequency</span>
+                            <select v-model="recurring.freq">
+                                <option value="1">Daily</option>
+                                <option value="7">Weekly</option>
+                                <option value="14">Every 2 weeks</option>
+                            </select>
+                        </label>
+                        <label>
+                            <span>USD</span>
+                            <input v-model="recurring.usd" type="number" min="0.01" step="0.01" placeholder="100" required>
+                        </label>
+                    </template>
+            
+                    <button class="order-form__submit" type="submit">submit</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
